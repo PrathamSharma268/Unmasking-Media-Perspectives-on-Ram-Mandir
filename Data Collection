@@ -1,0 +1,163 @@
+import requests
+from bs4 import BeautifulSoup
+
+# Define the list of search queries
+queries = [
+    '"Ram Mandir" site:northeasttimes.com OR site:www.tribuneindia.com 2000..2024',
+    '"Ram Mandir" site:indianexpress.com OR site:thehindu.com 2000..2024',
+    '"Ram Mandir" site:www.telegraphindia.com 2000..2024',
+    '"Ram Mandir" site:timesofindia.com OR site:kalingatimes.com 2000..2024',
+    '"Ram Mandir" site:ndtv.com OR site:economictimes.indiatimes.com 2000..2024',
+    '"Ram Mandir" site:news18.com OR site:www.republicworld.com 2000..2024',
+    '"Ram Mandir" site:www.firstpost.com OR site:www.businesstoday.in 2000..2024',
+    '"Ram Mandir" site:www.www.myind.net OR site:thesouthfirst.com 2000..2024',
+    '"Ram Mandir" site:www.nytimes.com OR site:www.newsx.com 2000..2024',
+    '"Ram Mandir" site:newsable.asianetnews.com OR site:www.livemint.com 2000..2024',
+    '"Ram Mandir" site:www.india.com OR site:www.deccanherald.com 2000..2024',
+    '"Ram Mandir" site:organiser.org OR site:www.indiatoday.in 2000..2024',
+    '"Ram Mandir" site:www.financialexpress.com OR site:www.cnn.com 2000..2024',
+    '"Ram Mandir" site:news.abplive.com OR site:www.msn.com 2000..2024',
+    '"Ram Mandir" site:swarajyamag.com OR site:www.hindustantimes.com 2000..2024',
+    '"Ram Mandir" site:www.timesnownews.com OR site:apnews.com 2000..2024',
+    '"Ram Mandir" site:www.pgurus.com OR site:www.aljazeera.com 2000..2024',
+    '"Ram Mandir" site:hindupost.in OR site:www.cnbctv18.com 2000..2024'
+
+]
+
+# Initialize a dictionary to store results for each query
+query_results = {}
+
+# Specify the Google Custom Search API endpoint
+url = 'https://www.googleapis.com/customsearch/v1'
+
+# Specify parameters: cx (Search Engine ID), key (API key)
+params = {
+    'cx': '1324d7486dfcb45c5',
+    'key': 'AIzaSyBeHihArp156skDpBH5xHgJE_tiQDypZQM'
+}
+
+# Loop through each search query
+for query in queries:
+    # Add the query to the parameters
+    params['q'] = query
+
+    # Make the API request
+    response = requests.get(url, params=params)
+
+    # Check if the request was successful (status code 200)
+    if response.status_code == 200:
+        # Parse and handle the API response (extract relevant information)
+        data = response.json()
+        # Extract relevant information from the response (e.g., article titles, URLs)
+        items = data.get('items', [])
+
+        # Store the results for the current query in the dictionary
+        query_results[query] = [{'title': item.get('title', ''), 'url': item.get('link', '')} for item in items]
+
+    else:
+        # If the request was not successful, print an error message
+        print(f'Error: {response.status_code}')
+
+# Print the results for each query
+for query, results in query_results.items():
+    print(f"Results for query: {query}")
+    for result in results:
+        print(f"Title: {result['title']}")
+        print(f"URL: {result['url']}")
+        print()
+
+
+# Initialize an empty list to store the URLs
+urls_only = []
+
+# Iterate through the query_results dictionary
+for query, results in query_results.items():
+    # Iterate through the results for each query
+    for result in results:
+        # Append the URL to the urls_only list
+        urls_only.append(result['url'])
+
+# Print the list of URLs
+print("List of URLs:")
+for url in urls_only:
+    print(url)
+print(len(urls_only))
+
+
+
+
+
+
+!pip install selenium
+!apt-get update
+!apt-get install -y chromium-browser
+!apt-get install chromium-chromedriver
+
+from selenium import webdriver
+
+
+def web_driver():
+    options = webdriver.ChromeOptions()
+    options.add_argument("--verbose")
+    options.add_argument('--no-sandbox')
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    options.add_argument("--window-size=1920, 1200")
+    options.add_argument('--disable-dev-shm-usage')
+    driver = webdriver.Chrome(options=options)
+    return driver
+
+
+
+
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import time
+
+driver = web_driver()
+
+# Function to extract text from a URL using Selenium + BeautifulSoup
+def extract_text_with_selenium(url):
+    # Initialize a Selenium WebDriver with the specified ChromeDriver path
+
+    #driver = webdriver.Chrome('/content/chromedriver.exe')
+
+    # Load the URL
+    driver.get(url)
+
+    # Wait for the page to fully load (you may need to adjust the wait time based on the website)
+    time.sleep(5)  # 5 seconds wait time
+
+    # Get the page source after JavaScript has rendered the content
+    page_source = driver.page_source
+
+    # Close the WebDriver
+    driver.quit()
+
+    # Parse the HTML content using BeautifulSoup
+    soup = BeautifulSoup(page_source, 'html.parser')
+
+    # Find and extract text content from specific HTML elements (e.g., <p>)
+    text_elements = soup.find_all('p')  # Adjust based on the structure of the website
+
+    # Concatenate text from all elements
+    text = ' '.join(element.get_text() for element in text_elements)
+
+    # Return the extracted text
+    return text
+
+# Specify the path to the ChromeDriver executable
+#chrome_driver_path = '/content/chromedriver.exe'  # Adjust the path as needed
+# Example URLs
+urls_only = [
+    'https://www.thehindu.com/elections/lok-sabha/csds-lokniti-2024-pre-poll-survey-construction-of-the-ram-mandir-will-help-the-bjp-consolidate-hindu-identity/article68055494.ece',
+
+    # Add more URLs here
+]
+
+# Iterate through the collected URLs and extract text using Selenium + BeautifulSoup
+for url in urls_only:
+    text = extract_text_with_selenium(url)
+    if text:
+        print(f'Text from {url} (with Selenium + BeautifulSoup):\n{text}\n')

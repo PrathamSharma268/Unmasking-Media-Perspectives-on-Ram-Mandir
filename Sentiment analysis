@@ -1,0 +1,194 @@
+!pip install transformers   # install the transformers library
+
+import pandas as pd
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoConfig
+import numpy as np
+from scipy.special import softmax
+import re
+
+# Function to preprocess text by removing URLs, mentions, hashtags, non-alphanumeric characters, and extra whitespaces
+def preprocess(text):
+    text = re.sub(r'http\S+', '', text)  # Remove URLs
+    text = re.sub(r'@\w+', '', text)     # Remove mentions
+    text = re.sub(r'#\w+', '', text)     # Remove hashtags
+    text = re.sub(r'[^\w\s]', '', text).strip()  # Remove non-alphanumeric characters and extra whitespaces
+    return text
+
+# Load the pre-trained model and tokenizer
+MODEL = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+tokenizer = AutoTokenizer.from_pretrained(MODEL)
+config = AutoConfig.from_pretrained(MODEL)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL, from_tf=True)
+
+# Function to analyze sentiment for a given row
+def analyze_sentiment(row):
+    text = preprocess(row['text'])  # Preprocess the text
+    encoded_input = tokenizer(text, return_tensors='pt', truncation=True, max_length=512)  # Tokenize the text
+    output = model(**encoded_input)  # Get the model output
+    scores = output[0][0].detach().numpy()  # Extract the scores
+    scores = softmax(scores)  # Apply softmax to get probabilities
+    ranking = np.argsort(scores)[::-1]  # Get the ranking of scores in descending order
+    for i in range(scores.shape[0]):
+        label = config.id2label[ranking[i]]
+        score = scores[ranking[i]]
+        row[label] = np.round(float(score), 4)  # Add the scores to the row with appropriate labels
+    return row
+
+# Function to perform sentiment analysis on a text column
+def sentiment_analysis(text_column):
+    df_sentiment = text_column.apply(lambda x: pd.Series({'text': x}))  # Create a DataFrame with the text column
+    df_sentiment = df_sentiment.apply(analyze_sentiment, axis=1)  # Apply sentiment analysis to each row
+    df_scores = df_sentiment  # Store the sentiment scores DataFrame
+    df_scores.columns = ['negative_score', 'neutral_score', 'positive_score', 'text']  # Rename the columns
+    return df_scores
+
+
+# Example usage
+df = pd.read_csv('data.csv')
+df
+
+df['content']=df['title']+df['content']
+dfv = sentiment_analysis(df['content'])
+
+# Drop the column "text" from DataFrame dfv and store it in a new DataFrame
+dfv=dfv.drop('text', axis=1)
+
+
+# Append the new DataFrame to df
+df = df.join(dfv)
+df
+
+df.to_csv('sentiment_topic_scores.csv', index=False)
+
+import pandas as pd
+dfqu=pd.read_csv('sentiment_topic_scores.csv')
+dfqu
+
+dfqu['month'] = dfqu['month'].astype(int)
+dfqu['year'] = dfqu['year'].astype(int)
+dfqu['joined'] = dfqu['month'].astype(str) + '/' + dfqu['year'].astype(str)
+dfqu['quarter'] = pd.PeriodIndex(pd.to_datetime(dfqu['joined'], format='%m/%Y'), freq='Q')
+dfqu
+
+# Grouping and calculating quarterly median sentiment scores
+
+# Calculate the median sentiment scores for each quarter
+dfqu['positive_score'] = dfqu.groupby('quarter')['positive_score'].transform('median')
+dfqu['negative_score'] = dfqu.groupby('quarter')['negative_score'].transform('median')
+dfqu['neutral_score'] = dfqu.groupby('quarter')['neutral_score'].transform('median')
+
+# Remove duplicate entries, keeping only one row per quarter
+dfqu = dfqu.drop_duplicates(subset=['quarter'])
+
+# Display the first few rows of the updated DataFrame
+dfqu.head()
+
+
+dfqu = dfqu.sort_values(by="quarter")
+dfqu = dfqu[(dfqu["year"] > 2019) | ((dfqu["year"] == 2019) & (dfqu["month"] >= 8))]
+
+dfqu
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Set the figure size for the plot
+plt.rcParams['figure.figsize'] = [20, 10]
+
+# Convert the 'quarter' column to string type
+dfq['quarter'] = dfqu['quarter'].astype(str)
+
+# Plot the 'positive_score' with 'quarter' as the x-axis
+plt.plot(dfqu['quarter'], dfq['positive_score'], label='Positive')
+plt.xticks(dfqu['quarter'], rotation=90)  # Rotate x-axis labels for better readability
+
+# Plot the 'negative_score' with 'quarter' as the x-axis
+plt.plot(dfqu['quarter'], dfqu['negative_score'], label='Negative')
+
+# Optionally plot the 'neutral_score' with 'quarter' as the x-axis (currently commented out)
+# plt.plot(dfq['quarter'], dfq['neutral_score'], label='Neutral')
+
+# Add title and labels for the axes
+plt.title('Sentiment Over Time')
+plt.xlabel('Date')
+plt.ylabel('Sentiment Count')
+
+# Add a legend to the plot
+plt.legend()
+
+# Display the plot
+plt.show()
+
+
+Pie chart
+
+dfp=pd.read_csv('sentiment_topic_scores.csv')
+len(df)
+
+dfp
+
+positive_cnt = 0
+
+for i in range(len(df)):
+    if df.loc[i, 'positive_score'] > df.loc[i, 'negative_score']:
+        positive_cnt += 1
+
+print("Number of articles with positive score greater than negative score and neutral score:", positive_cnt)
+
+negative_cnt = 0
+
+for i in range(len(df)):
+    if df.loc[i, 'negative_score'] > df.loc[i, 'positive_score']:
+        negative_cnt += 1
+
+print("Number of articles with positive score greater than negative score and neutral score:", negative_cnt)
+
+import matplotlib.pyplot as plt
+
+# Assuming 'positive_count' and 'negative_count' are variables that store the counts of positive and negative articles
+
+# Define data for the pie chart
+labels = ['Positive', 'Negative']
+sizes = [positive_count, negative_count]
+explode = (0.1, 0)  # Explode the first slice (Positive)
+
+# Define colors for the pie chart slices
+colors = ['#ff9999', '#66b3ff']
+
+# Create the pie chart
+plt.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90, explode=explode)
+
+# Add a title to the pie chart
+plt.title('Distribution of Positive and Negative Articles')
+
+# Ensure the pie chart is drawn as a circle
+plt.axis('equal')
+
+# Display the pie chart
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

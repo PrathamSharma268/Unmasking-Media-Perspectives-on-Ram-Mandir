@@ -1,0 +1,275 @@
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning) 
+
+pip install pyLDAvis
+
+import nltk
+nltk.download('stopwords')
+
+
+import spacy
+import nltk
+import re
+import string
+import pandas as pd
+import numpy as np
+from stop_word_list import *
+# from clean_text impfort *
+import gensim
+from gensim import corpora
+import pyLDAvis.gensim_models
+import matplotlib.pyplot as plt
+import json
+%matplotlib inline
+
+%run nlp_topic_utils.ipynb
+
+df = pd.read_csv('articles_corpus.csv')
+
+df.head()
+
+df = df.dropna()
+
+import nltk
+nltk.download('wordnet')
+
+df['processed_text'] = df['content'].apply(process_text)
+
+clean_text = pd.DataFrame(df['processed_text'])
+
+pip install sacremoses
+
+from sacremoses import MosesDetokenizer, MosesTokenizer
+
+mt = MosesDetokenizer(lang='en')
+
+
+df['detoken']=df['processed_text'].apply(lambda x: mt.detokenize(x, return_str=True))
+df['detoken']
+
+bigram_measures = nltk.collocations.BigramAssocMeasures()
+finder = nltk.collocations.BigramCollocationFinder.from_documents([comment.split() for comment in df['detoken']])
+finder.apply_freq_filter(35)
+bigram_scores = finder.score_ngrams(bigram_measures.pmi)
+
+trigram_measures = nltk.collocations.TrigramAssocMeasures()
+finder = nltk.collocations.TrigramCollocationFinder.from_documents([comment.split() for comment in df['detoken']])
+finder.apply_freq_filter(35)
+trigram_scores = finder.score_ngrams(trigram_measures.pmi)
+
+bigram_pmi = pd.DataFrame(bigram_scores, columns=['bigram', 'pmi']).sort_values(by='pmi', ascending=False)
+trigram_pmi = pd.DataFrame(trigram_scores, columns=['trigram', 'pmi']).sort_values(by='pmi', ascending=False)
+
+
+
+bigram_pmi.head(10)
+
+def bigram_filter(bigram):
+    tag = nltk.pos_tag(bigram)
+    if tag[0][1] not in ['JJ', 'NN'] or tag[1][1] not in ['NN']:
+        return False
+    if any(word in stop_word_list or len(word) <= 2 for word in bigram):
+        return False
+    return True
+
+def trigram_filter(trigram):
+    tag = nltk.pos_tag(trigram)
+    if tag[0][1] not in ['JJ', 'NN'] or tag[1][1] not in ['JJ', 'NN']:
+        return False
+    if any(word in stop_word_list or len(word) <= 2 for word in trigram):
+        return False
+    return True
+
+nltk.download('averaged_perceptron_tagger')
+
+filtered_bigram = bigram_pmi[bigram_pmi.apply(lambda bigram: bigram_filter(bigram['bigram']) and bigram['pmi'] > 5, axis=1)][:500]
+filtered_trigram = trigram_pmi[trigram_pmi.apply(lambda trigram: trigram_filter(trigram['trigram']) and trigram['pmi'] > 5, axis=1)][:500]
+
+
+bigrams = [' '.join(x) for x in filtered_bigram['bigram'].values if len(x[0]) > 2 or len(x[1]) > 2]
+trigrams = [' '.join(x) for x in filtered_trigram['trigram'].values if len(x[0]) > 2 or len(x[1]) > 2 or len(x[2]) > 2]
+
+bigrams = [' '.join(x) for x in bigram_pmi.bigram.values if len(x[0]) > 2 or len(x[1]) > 2]
+trigrams = [' '.join(x) for x in trigram_pmi.trigram.values if len(x[0]) > 2 or len(x[1]) > 2 and len(x[2]) > 2]
+
+
+bigram_pmi[:10]
+
+# examples of bigrams
+bigrams[:10]
+
+# examples of trigrams
+trigrams[:10]
+
+def replace_ngram(text):
+    for gram in trigrams:
+        text = text.replace(gram, '_'.join(gram.split()))
+    for gram in bigrams:
+        text = text.replace(gram, '_'.join(gram.split()))
+    return text
+
+reviews_w_ngrams = df.copy()
+reviews_w_ngrams['reviewText'] = reviews_w_ngrams['detoken'].map(replace_ngram)
+
+reviews_w_ngrams['token'] = reviews_w_ngrams['reviewText'].map(lambda x: [word for word in x.split() if word not in stop_word_list and len(word) > 2])
+
+
+reviews_w_ngrams.head()
+
+NMF Model
+
+
+from sklearn.decomposition import NMF
+from sklearn.feature_extraction.text import TfidfVectorizer
+from gensim.models.coherencemodel import CoherenceModel
+from gensim.corpora.dictionary import Dictionary
+from gensim.models.nmf import Nmf
+from collections import Counter
+from operator import itemgetter
+import seaborn as sns
+sns.set_style('darkgrid')
+
+p_text = [item for sublist in reviews_w_ngrams['token'] for item in sublist]
+top_20 = pd.DataFrame(Counter(p_text).most_common(20), columns=['word', 'frequency'])
+
+
+num_unique_words = len(set(p_text))
+num_unique_words
+
+# Using Gensim's NMF to get the best num of topics through coherence score
+
+texts = reviews_w_ngrams['token']
+
+# Create a dictionary
+dictionary = Dictionary(texts)
+dictionary.filter_extremes(no_below=3, no_above=0.85, keep_n=5000)
+corpus = [dictionary.doc2bow(text) for text in texts]
+
+topic_nums = list(np.arange(5, 21, 1))
+coherence_scores = []
+
+for num in topic_nums:
+    nmf = Nmf(corpus=corpus, num_topics=num, id2word=dictionary, chunksize=2000, passes=5, kappa=0.1, minimum_probability=0.01, w_max_iter=300, w_stop_condition=0.0001, h_max_iter=100, h_stop_condition=0.001, eval_every=10, normalize=True, random_state=42)
+    cm = CoherenceModel(model=nmf, texts=texts, dictionary=dictionary, coherence='c_v')
+    coherence_scores.append(round(cm.get_coherence(), 5))
+
+best_num_topics = max(zip(topic_nums, coherence_scores), key=itemgetter(1))[0]
+
+fig = plt.figure(figsize=(15, 7))
+plt.plot(topic_nums, coherence_scores, linewidth=3, color='#4287f5')
+plt.xlabel("Topic Num", fontsize=14)
+plt.ylabel("Coherence Score", fontsize=14)
+plt.title(f'Coherence Score by Topic Number - Best Number of Topics: {best_num_topics}', fontsize=18)
+plt.xticks(np.arange(5, max(topic_nums) + 1, 5), fontsize=12)
+plt.yticks(fontsize=12)
+plt.savefig('c_score.png', dpi=fig.dpi, bbox_inches='tight')
+plt.show()
+
+
+texts = reviews_w_ngrams['token']
+
+
+tfidf_vectorizer = TfidfVectorizer(min_df=3, max_df=0.85, max_features=5000, ngram_range=(1, 2), preprocessor=' '.join)
+tfidf = tfidf_vectorizer.fit_transform(texts)
+tfidf_fn = tfidf_vectorizer.get_feature_names_out()
+nmf = NMF(n_components=best_num_topics, init='nndsvd', max_iter=500, l1_ratio=0.0, solver='cd', tol=1e-4, random_state=42).fit(tfidf)
+
+# Getting a df with each topic by document
+docweights = nmf.transform(tfidf_vectorizer.transform(texts))
+
+n_top_words = 3
+
+topic_df = topic_table(
+    nmf,
+    tfidf_fn,
+    n_top_words
+).T
+
+# Cleaning up the top words to create topic summaries
+topic_df['topics'] = topic_df.apply(lambda x: [' '.join(x)], axis=1) # Joining each word into a list
+topic_df['topics'] = topic_df['topics'].str[0]  # Removing the list brackets
+topic_df['topics'] = topic_df['topics'].apply(lambda x: whitespace_tokenizer(x)) # tokenize
+topic_df['topics'] = topic_df['topics'].apply(lambda x: unique_words(x))  # Removing duplicate words
+topic_df['topics'] = topic_df['topics'].apply(lambda x: [' '.join(x)])  # Joining each word into a list
+topic_df['topics'] = topic_df['topics'].str[0]  # Removing the list brackets
+
+topic_df
+
+LDA Model
+
+dictionary = corpora.Dictionary(reviews_w_ngrams['token'])
+doc_term_matrix = [dictionary.doc2bow(doc) for doc in reviews_w_ngrams['token']]
+
+
+coherence = []
+for k in range(5, 15):
+    print(f'Round: {k}')
+    Lda = gensim.models.ldamodel.LdaModel
+    ldamodel = Lda(doc_term_matrix, num_topics=k, id2word=dictionary, passes=40, iterations=200, chunksize=10000, eval_every=None)
+    cm = gensim.models.coherencemodel.CoherenceModel(model=ldamodel, texts=reviews_w_ngrams['token'], dictionary=dictionary, coherence='c_v')
+    coherence.append((k, cm.get_coherence()))
+
+
+x_val = [x[0] for x in coherence]
+y_val = [x[1] for x in coherence]
+
+plt.plot(x_val, y_val)
+plt.scatter(x_val, y_val)
+plt.title('Number of Topics vs. Coherence')
+plt.xlabel('Number of Topics')
+plt.ylabel('Coherence')
+plt.xticks(x_val)
+plt.show()
+
+ldamodel = Lda(doc_term_matrix, num_topics=7, id2word=dictionary, passes=40, iterations=200, chunksize=10000, eval_every=None, random_state=0)
+
+
+ldamodel2 = Lda(doc_term_matrix, num_topics=13, id2word=dictionary, passes=40, iterations=200, chunksize=10000, eval_every=None, random_state=0)
+
+
+# To show initial topics
+ldamodel.show_topics(7, num_words=20, formatted=False)
+
+# To show initial topics
+lda7topics = pd.DataFrame(ldamodel.show_topics(7, num_words=20, formatted=False))
+
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+for index in range(7):
+
+
+  # Generate word cloud for the topic
+  topic_words_dict = {word: score for word, score in lda7topics[1][index]}
+  wordcloud = WordCloud(width=800, height=400, background_color='white').generate_from_frequencies(topic_words_dict)
+
+  # Plot the word cloud
+  plt.figure(figsize=(10, 6))
+  plt.imshow(wordcloud, interpolation='bilinear')
+  plt.axis('off')
+  plt.title(f'Topic {index}')
+  plt.show()
+
+topic_scores = pd.DataFrame(ldamodel[doc_term_matrix])
+
+topic_scores.to_csv("topic_scores_3.csv")
+
+# To show initial topics
+ldamodel2.show_topics(13, num_words=15, formatted=False)
+
+topic_data =  pyLDAvis.gensim_models.prepare(ldamodel, doc_term_matrix, dictionary, mds = 'pcoa')
+pyLDAvis.display(topic_data)
+
+topic_data2 =  pyLDAvis.gensim_models.prepare(ldamodel2, doc_term_matrix, dictionary, mds = 'pcoa')
+pyLDAvis.display(topic_data)
+
+all_topics = {}
+num_terms = 10
+lambd = 0.6
+for i in range(1, 8):
+    topic = topic_data.topic_info[topic_data.topic_info.Category == f'Topic{i}'].copy()
+    topic['relevance'] = topic['loglift'] * (1 - lambd) + topic['logprob'] * lambd
+    all_topics[f'Topic {i}'] = topic.sort_values(by='relevance', ascending=False).Term[:num_terms].values
+
+pd.DataFrame(all_topics).T
